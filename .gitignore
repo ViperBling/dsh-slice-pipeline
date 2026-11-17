@@ -1,0 +1,16 @@
+# 依赖与构建产物
+node_modules/
+*.tgz
+coverage/
+.nyc_output/
+
+# 本机工具与编辑器
+.DS_Store
+.codegraph/
+*.log
+
+# 开发过程产物：不参与插件运行，也不进 npm 包
+**/AIOut/
+docs/superpowers/
+*.bak
+*.bak-*

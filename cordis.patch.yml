@@ -1,0 +1,9 @@
+# dsh-slice-pipeline bundle patch: mount the slice-pipeline skill provider
+# into the host skill registry. Rows registered there are visible to every
+# agent preset's scope chain in the profile.
+#
+# Later layers (the profile's own cordis.patch.yml and --patch overlays) can
+# still address this row by id.
+- insert:
+    - id: dsh-slice-pipeline
+      name: 'dsh-slice-pipeline'

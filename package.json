@@ -1,0 +1,59 @@
+{
+  "name": "dsh-slice-pipeline",
+  "version": "0.11.0",
+  "description": "Slice-pipeline 流水线插件（6 个可配置 Skill）：会话通过 slice_pipeline_run 工具运行，不再内联脚本。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "files": [
+    "lib",
+    "skills",
+    "docs/INDEX.md",
+    "docs/global-agents-entry.md",
+    "docs/planning",
+    "docs/patch-delivery",
+    "docs/workspace-recovery",
+    "docs/review",
+    "docs/diagrams",
+    "docs/shared",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "skill",
+    "workflow",
+    "slice-pipeline"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "license": "MIT"
+}

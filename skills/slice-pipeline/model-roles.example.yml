@@ -1,0 +1,40 @@
+# ============================================================================
+# 回退模板：只在 skill 没有注入插件配置时使用；真源是 dsh-slice-pipeline 插件设置（阶段使用的角色由功能模块决定）。
+# ----------------------------------------------------------------------------
+# model-roles.example.yml —— 角色 → 模型 配置模板
+# 本文件仅用于旧版或无注入配置时的兜底；正常使用时在插件设置里按模块配置角色。
+#
+# 角色说明：
+#   default  = 兜底角色
+#   designer = design（brief 由主会话产出，不再占 designer 的 agent 调用）
+#   task     = implement / fix
+#   reviewer = codeReview（planReview / briefReview 已归档，不启用）
+#
+# ⚠️ agent() 不支持 effort / reasoning 参数；档位由各 provider 路由默认值决定。
+#     所以角色对象只写 provider 和 model 两个字段，多写的键会被忽略。
+#
+# ⚠️ 审查者建议使用与生成方不同的模型族，降低同模型自审盲区。
+#     如果本机只有一个可用模型，reviewer 可暂时与 task 相同，但要知道这个限制。
+#
+# 下面是一份“标准 DSH 只有 deepseek-official 路由”时的最小可用示例。
+# 如果你有 paper-openai / paper-anthropic 等路由，请把 designer / reviewer
+# 改成对应 provider + model。
+# ============================================================================
+version: 1
+
+roles:
+  default:
+    provider: deepseek-official
+    model: deepseek-flash
+
+  designer:
+    provider: deepseek-official
+    model: deepseek-flash
+
+  task:
+    provider: deepseek-official
+    model: deepseek-flash
+
+  reviewer:
+    provider: deepseek-official
+    model: deepseek-flash

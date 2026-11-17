@@ -1,0 +1,1 @@
+# Planning fixture standard

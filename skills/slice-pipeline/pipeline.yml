@@ -1,0 +1,43 @@
+# ============================================================================
+# 回退模板：只在 skill 没有注入插件配置时使用；真源是 dsh-slice-pipeline 插件设置（阶段使用的角色由功能模块决定）。
+# ----------------------------------------------------------------------------
+# 本文件随 skill 一起分发，路径相对于本 skill 的资源目录。
+# 注意：DSH 不会自动读它——workflow 脚本运行在受限 VM 里（无 fs），
+# 必须由主会话 read 本文件后，把 `stages` 段和 `maxFixRounds` 内联进
+# workflow 工具的 args。
+#
+# 本文件只管「跑哪些阶段、什么顺序」；阶段使用的角色由各功能模块的设置决定。
+#
+# 阶段名集合（乱写会 Fail Fast 抛错）：
+#   plan 族 : design（主计划+切片定义+每片 research）
+#             planReview 已归档（ARCHIVED_STAGES，不启用）
+#   slice 族: brief（主会话产出/批处理投影，不派 agent）, implement（实现）,
+#             codeReview（代码审查）, fix（修订闭环）
+#             briefReview 已归档（不启用）
+#
+# 硬依赖（排序时不得违反，违反即抛错）：
+#   design 必备且首个；brief 可选但在 implement 前；codeReview 在 implement 后；
+#   fix 在 codeReview 后（依赖它）。
+#
+# 阶段→角色分工（固定，不随 stages 改）：
+#   designer: design                  task: implement / fix
+#   reviewer: codeReview
+#   归档阶段不占角色；brief 由主会话产出。
+# ============================================================================
+version: 1
+
+stages:
+  # 计划族：主问题分析 → 切片定义（计划评审已归档）
+  plan:
+    - design        # 主问题分析 + 切片定义 + 每片 research（designer）
+    # - planReview  # 已归档，不启用；恢复需从 ARCHIVED_STAGES 移除
+  # 切片族：brief 投影 → 实现 → 审查回归 → 修订 → 交付
+  slice:
+    - brief         # 主会话产出（plan.json 的 slices[i].brief），workflow 只投影
+    # - briefReview # 已归档，不启用
+    - implement     # 进入实现（task）
+    - codeReview    # 切片审查回归（reviewer）
+    - fix           # 修订代码和文档（task 修复 + reviewer 复审；无 🔴 自动跳过）
+
+# 修订闭环上限：每片最多修几轮（0 = 完全禁用 fix 阶段，等同于把 fix 从 slice 里删掉）
+maxFixRounds: 3
