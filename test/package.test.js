@@ -9,7 +9,7 @@ const read = (rel) => readFileSync(join(ROOT, rel), 'utf8')
 const pkg = JSON.parse(read('package.json'))
 
 test('package metadata', () => {
-  assert.equal(pkg.version, '0.11.0')
+  assert.equal(pkg.version, '0.12.0')
   assert.match(pkg.description, /6 个可配置 Skill/)
   assert.equal(pkg.scripts?.test, 'node --test "test/**/*.test.js"')
   assert.deepEqual(pkg.files, [

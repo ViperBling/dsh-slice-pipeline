@@ -108,10 +108,10 @@ test('apply wires the pipeline registration behind tools and workflowEngine', as
 
   await apply(ctx, {})
 
-  assert.deepEqual(servicesSeen, ['tools', 'workflowEngine'])
-  assert.equal(effectLabel, 'dsh-slice-pipeline: pipeline tool')
-  assert.equal(registered.length, 1)
-  assert.equal(registered[0].name, 'slice_pipeline_run')
+  assert.deepEqual(servicesSeen, ['tools'])
+  assert.equal(effectLabel, 'dsh-slice-pipeline: external agent tool')
+  assert.equal(registered.length, 2)
+  assert.deepEqual(registered.map((definition) => definition.name).sort(), ['external_agent_run', 'slice_pipeline_run'])
 })
 
 test('successful registration records an ok tool status', () => {

@@ -27,9 +27,18 @@ test('root keeps roles, stages and maxFixRounds; reviewStandard lives in the rev
   const root = section.fields.filter((field) => !field.group).map((field) => field.path.join('.'))
   assert.deepEqual(root, [
     'roles.default', 'roles.designer', 'roles.task', 'roles.reviewer',
-    'stages.plan', 'stages.slice', 'maxFixRounds'
+    'stages.plan', 'stages.slice', 'maxFixRounds',
+    'externalAgents.timeoutMinutes', 'externalAgents.firstResponseTimeoutMinutes'
   ])
   assert.equal(section.fields.find((field) => field.path.join('.') === 'reviewStandard').group, 'review')
+})
+
+test('external agent timeouts are editable numbers', () => {
+  const section = buildTuiSection([], readConfig({}))
+  for (const path of ['externalAgents.timeoutMinutes', 'externalAgents.firstResponseTimeoutMinutes']) {
+    const field = section.fields.find((item) => item.path.join('.') === path)
+    assert.equal(field.kind, 'number', path)
+  }
 })
 
 test('pipeline has only enabled; patchDelivery has two path fields', () => {
@@ -148,6 +157,7 @@ test('apply wires the native TUI settings seam with plain config', async () => {
     },
     inject(services, callback) {
       if (services[0] === 'tools') return
+      if (services[0] === 'webServer') return
       assert.deepEqual(services, ['tuiSettingsSections'])
       callback({
         tuiSettingsSections: {
@@ -173,7 +183,7 @@ test('apply wires the native TUI settings seam with plain config', async () => {
   await settle()
   assert.equal(section.ns, 'dsh-slice-pipeline')
   assert.equal(section.title, 'Slice Pipeline')
-  assert.equal(section.fields.length, 25)
+  assert.equal(section.fields.length, 27)
   const designer = section.fields.find((field) => field.path.join('.') === 'roles.designer')
   assert.deepEqual(designer.options, [{ value: 'provider/model', label: 'Provider / Model · max' }])
   const plan = section.fields.find((field) => field.path.join('.') === 'stages.plan')

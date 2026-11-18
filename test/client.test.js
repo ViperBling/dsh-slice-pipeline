@@ -84,6 +84,20 @@ test('legacy content is never rendered; alias shows the mapping note', async () 
   assert.ok(h.mount({ reviewStandard: 'review-standard.md' }).text().includes('已自动映射到 docs/review/review-standard.md'))
 })
 
+test('external agent timeout inputs write minutes and reject invalid values', async () => {
+  const m = (await loadClientHarness()).mount({})
+  assert.ok(m.byField('externalAgents.timeoutMinutes'), 'overall timeout input renders')
+  m.byField('externalAgents.timeoutMinutes').props.onBlur({ target: { value: '90' } })
+  await settle()
+  assert.deepEqual(m.mutations.at(-1), [{ op: 'set', path: ['externalAgents', 'timeoutMinutes'], value: 90 }])
+  m.byField('externalAgents.timeoutMinutes').props.onBlur({ target: { value: '0' } })
+  await settle()
+  assert.equal(m.mutations.length, 1, 'invalid minute count is rejected')
+  m.byField('externalAgents.firstResponseTimeoutMinutes').props.onBlur({ target: { value: '15' } })
+  await settle()
+  assert.deepEqual(m.mutations.at(-1), [{ op: 'set', path: ['externalAgents', 'firstResponseTimeoutMinutes'], value: 15 }])
+})
+
 test('client definitions match the host', async () => {
   const { MODULES, cleanPathInput: c, isContentLike: i } = (await loadClientHarness()).exports.helpers
   assert.deepEqual(MODULES.map((m) => m.key), MODULE_KEYS)

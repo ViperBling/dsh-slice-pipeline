@@ -20,6 +20,12 @@ function createReact() {
     useCallback(fn) {
       return fn
     },
+    useMemo(fn) {
+      return fn()
+    },
+    useRef(initial) {
+      return { current: initial }
+    },
     useEffect() {}
   }
 }

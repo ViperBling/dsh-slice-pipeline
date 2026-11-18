@@ -107,6 +107,7 @@ test('plain and volatile fields preserve overrides and fall back only when nulli
   const live = Config(structuredClone(raw))
   raw.designProvenance = 'enforce'
   raw.reasoningEfforts = { default: '', designer: '', task: '', reviewer: '' }
+  raw.externalAgents = readConfig(Config({})).externalAgents
   assert.deepEqual(readConfig(live), raw)
   assert.deepEqual(readConfig(raw), raw)
   for (const key of MODULE_KEYS) {

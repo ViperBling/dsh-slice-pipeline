@@ -74,7 +74,23 @@ dsh plugin --profile web remove dsh-slice-pipeline
 | `review` | `slice-review` | `reviewStandard` → `docs/review/review-standard.md`（reviewer 运行时）；`reviewDispatch` → `docs/review/review-dispatch.md`（Lead 派发/闭环） |
 | `diagrams` | `slice-diagrams` | `docs/diagrams/standard.md` |
 
-配置 schema 根键：`roles` / `stages` / `maxFixRounds` / `reviewStandard` / `reviewDispatch` / `reasoningEfforts` / `designProvenance` / `modules`。
+配置 schema 根键：`roles` / `stages` / `maxFixRounds` / `reviewStandard` / `reviewDispatch` / `reasoningEfforts` / `externalAgents` / `designProvenance` / `modules`。
+
+### 外部 Agent（可选，v0.12）
+
+`externalAgents.designer/reviewer.enabled=true` 时，对应角色改走本机 **Claude Code**（Claude Agent SDK one-shot）：
+
+- 首次运行把固定版本的 SDK 装到 `<DSH_HOME>/slice-pipeline/claude-sdk/`；使用本机 `claude` 二进制，不下载 200 MB 平台包。
+- 只读执行：`settingSources: []` + `disallowedTools` + `canUseTool` 白名单；不加载项目 `CLAUDE.md`/用户 hooks。
+- 认证/模型从 `~/.claude/settings.json` 的 `env` 合并，不在日志输出密钥；设置页 Model 下拉会读取本机 native aliases / resolved model：留空 = 完全交给 Claude CLI 决定；也可选 `opus` / `sonnet` / `haiku` 或精确 id（如 `claude-opus-5-5`）。
+- 进度写入 DSH job，并在 **dsh-better-sidebar** 的 `Claude` tab 显示阶段条/时间线/thinking/usage；默认自动打开，可在设置关闭。
+- Claude 进度事件按 **Session 隔离**：存放在该 Session 自己的目录（`<dshHome>/sessions/<project>/<sessionId>/slice-pipeline/claude-events/`）；历史列表、事件读取与删除都带 `sessionId` 校验，其他 Session 看不到也删不掉。旧版全局 `~/.dsh/slice-pipeline/claude-events/` 不再被直接读取，但会按会话日志里记录过的 job id 一次性认领到对应 Session（只复制，源文件保留）。
+- 外部 dispatch 可传 `effortLevel`（low/medium/high/xhigh/max）；`showThinkingSummaries` 默认 true。
+- 外部执行默认 `maxTurns=120`、整体超时 30 分钟、首个内容响应超时 10 分钟；这三项都在设置页「外部 Agent」区可改（`externalAgents.maxTurns` / `timeoutMinutes` / `firstResponseTimeoutMinutes`），单次调用仍可用 `timeoutMs` / `firstResponseTimeoutMs` 覆盖。`error_max_turns` 表示模型在预算内没收敛，不是卡死。
+- 本机 Claude CLI 的 thinking/effort 环境问题与回退方式见 [`docs/shared/external-claude-cli-troubleshooting.md`](docs/shared/external-claude-cli-troubleshooting.md)。
+- 外部执行失败只报错，不静默降级；批处理 `plan-only`/`slice` 遇到外部开关会直接报错。
+- **路由不是同一条**：外部 CLI 使用 `~/.claude/settings.json` 的 provider/base URL/model，不是 DSH 的 `roles.designer` 路由（例如 `paper-anthropic/claude-opus-5-5`）。结果会带 `external` / `routeSource: claude-cli`；不要把它与既有 DSH 路由产出的设计直接对比。
+- 不复用实验性 `subagent_claude_code`：它只返回最终文本，没有 output schema、结果文件或工具级进度；本插件需要结构化结果与细粒度进度。
 
 - 设置页只保存路径，不显示或编辑规范内容；路径相对插件根目录或绝对路径均可。
 - 关闭模块后对应 Skill 不再出现；被依赖模块关闭时，workflow 会在第一次 `agent()` 前报错。
@@ -122,11 +138,13 @@ dsh-slice-pipeline/
 ├─ README.md / LICENSE
 ├─ lib/
 │  ├─ index.js              # host 入口、配置注入、dsh-tui 设置
-│  ├─ client.js             # Desktop / Web 设置页
+│  ├─ client.js             # Desktop / Web 设置页 + BetterSidebar 进度 tab
 │  ├─ config.js             # 配置 schema 与模块定义
 │  ├─ paths.js              # 路径解析
 │  ├─ inject.js             # Skill 正文注入
 │  ├─ pipeline-tool.js      # slice_pipeline_run 工具
+│  ├─ external-agent.js     # external_agent_run 工具 + job 事件
+│  ├─ claude-sdk.js         # Claude Agent SDK 惰性安装 / one-shot runner
 │  ├─ tool-schema.js        # 参数 / output schema 方言转换
 │  ├─ skills.js             # Skill 发现与加载
 │  └─ tui.js                # dsh-tui 设置分区
@@ -143,6 +161,7 @@ dsh-slice-pipeline/
 
 ## 版本要点
 
+- **0.12**：Designer/Reviewer 可切到本机 Claude Code（SDK one-shot）；`renderDesign→external_agent_run→codeDesign`、`renderReview→external_agent_run→codeReview`；BetterSidebar `Claude` 进度 tab（默认自动打开）；外部执行严格只读、失败不降级；patch 新增行禁止切片 id/标题/序号（`slice-leak` 硬门禁）。
 - **0.11**：审查规范按读者拆分；`renderReview` 生成审查包、薄文档只含 1–3 节；review prompt 不再泄漏 brief/research；render 路径写 `payload.json` 并只回 `reviewPath`；design 去掉制图规范并加输出预算。
 - **0.10**：Lead 侧 `subagent` 审查；`reasoningEfforts` 可配置。
 - **0.9**：`design.json` 与 `designRef` 溯源，brief 必须引用 research。
@@ -150,6 +169,6 @@ dsh-slice-pipeline/
 
 ## 说明
 
-- host 侧依赖 `@deepseek-ai/schemastery`，注册 `slice_pipeline_run`；后台模式还需要 `@deepseek-ai/dsh-jobs` 与 `@deepseek-ai/dsh-tool-jobs`（缺失只影响后台模式）。
+- host 侧依赖 `@deepseek-ai/schemastery`，注册 `slice_pipeline_run`；后台模式还需要 `@deepseek-ai/dsh-jobs` 与 `@deepseek-ai/dsh-tool-jobs`（缺失只影响后台模式）；`external_agent_run` 需要 `jobs` 服务；BetterSidebar 进度 tab 需要已安装 `dsh-better-sidebar`（缺失时只是没有 tab，外部执行仍可用）。
 - 浏览器侧通过 DSH module loader 使用 `react` 与 DSH client services。
 - 插件不改变 DSH `workflow` 工具的执行方式；它负责 Skill 打包、配置界面与配置注入。

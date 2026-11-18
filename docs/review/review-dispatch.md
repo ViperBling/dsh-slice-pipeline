@@ -136,7 +136,7 @@
 3. **二次审查（默认聚焦增量）**：复审只做三件事——①逐条核对上一轮 findings（resolved/unresolved/changed + 证据）；②审修复 delta 的 hunk；③对 delta 触及的每个符号做一次 codegraph `impact`/`callers`，确认调用方未被破坏。**升级全量的条件**（自动，附原因）：首轮；delta 缺失或未覆盖 `filesChanged`；变更符号 >6；实现者声明改了公共签名/共享布局/默认行为（`contractChanged`）；改动越出上一轮 findings 文件集合且未给 `scopeNote`；上一轮 review 结果缺失。批处理 `slice` 的复审仍全量。模型档位按本文「2.3 审查模型分层」。
 4. **闭环退出条件**：
    - 所有 🔴 级问题已被解决（修复 patch 验证通过）；
-   - 🟡 级问题有明确的"已修复"或"接受理由"记录；但[补丁交付规范「2. 最终 patch 的代码放置与 include 顺序」](../patch-delivery/standard.md)属用户硬要求，其条目不得以"接受理由"关闭，须修正或由用户明确豁免；`category: "over-fix"` 的条目同样不得以"接受理由"关闭，须最小化修复或由用户明确豁免；
+   - 🟡 级问题有明确的"已修复"或"接受理由"记录；但[补丁交付规范「2. 最终 patch 的代码放置与 include 顺序」](../patch-delivery/standard.md)属用户硬要求，其条目不得以"接受理由"关闭，须修正或由用户明确豁免；`category: "over-fix"` 与 `category: "slice-leak"` 的条目同样不得以"接受理由"关闭，须最小化修复或由用户明确豁免；
    - 二次审查未发现新的 🔴 级问题；
    - 满足以上条件后，闭环结束，输出最终 `<任务名>.patch` + 薄文档，并生成人工终审摘要（见本文「2.2 审查顺序」第 4 步）。
 5. **闭环记录**：审查报告 → 修复 patch → 验证结果 → 二次审查结论，记录在 `AIOut/<任务名>/reviews/<任务名>-fix-loop.md`。单轮修复写摘要；多轮写每轮变更与决策依据。**旧版 patch / 旧文档移入 `archive/`，不在活文档追加附录。**

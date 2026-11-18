@@ -1,6 +1,6 @@
 {
   "name": "dsh-slice-pipeline",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Slice-pipeline 流水线插件（6 个可配置 Skill）：会话通过 slice_pipeline_run 工具运行，不再内联脚本。",
   "type": "module",
   "main": "lib/index.js",

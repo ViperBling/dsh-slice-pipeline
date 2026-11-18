@@ -223,7 +223,7 @@ test('batch slice prompts/result match the pre-S1 baseline', async () => {
   )
   assert.equal(run.error, null)
   assert.deepEqual(run.calls.map((call) => call.opts.label), ['impl:S1', 'code-review:S1'])
-  assert.equal(batchSnapshot(run), '17ef12e2efee')
+  assert.equal(batchSnapshot(run), '35653eb459ad')
 })
 
 test('batch slice fix loop prompts/result match the pre-S1 baseline', async () => {
@@ -249,7 +249,7 @@ test('batch slice fix loop prompts/result match the pre-S1 baseline', async () =
   assert.equal(run.error, null)
   assert.deepEqual(run.calls.map((call) => call.opts.label),
     ['impl:S1', 'code-review:S1', 'fix-1:S1', 'code-review-fix-1:S1'])
-  assert.equal(batchSnapshot(run), '709a8a4d54bb')
+  assert.equal(batchSnapshot(run), '7566eeabe743')
 })
 
 // ---------------------------------------------------------------------------
@@ -1040,7 +1040,7 @@ test('fix prompt asks for a delta patch and the new impl fields', async () => {
   const reviewCall = run.calls.find((call) => String(call.opts.label).startsWith('code-review'))
   assert.ok(reviewCall.prompt.includes('over-fix'))
   const findingProps = reviewCall.opts.schema.properties.findings.items.properties
-  assert.deepEqual(findingProps.category.enum, ['defect', 'over-fix', 'over-design', 'performance'])
+  assert.deepEqual(findingProps.category.enum, ['defect', 'over-fix', 'over-design', 'performance', 'slice-leak'])
   // 0.8.0：CPU/GPU 热路径清单移到运行时规范，prompt 只引用规范
   const runtime = await readFile(join(ROOT, 'docs', 'review', 'review-standard.md'), 'utf8')
   assert.ok(reviewCall.prompt.includes('十维清单'))
@@ -1364,6 +1364,67 @@ test('reviewPath outside outDir/reviews is rejected before the workflow starts',
       round: 1, userFeedback: '', preflight: 'exit 0', ...CONTEXT_PARAMS, outDir,
       codeReview: { reviewPath: outside }
     }, exec('a1')), /outDir\/reviews|必须位于/i)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('renderDesign returns an external task book without dispatching design agent', async () => {
+  const run = await runScript({
+    ...BASE, mode: 'design', requirement: '外部设计需求', discussionDigest: '已确认',
+    renderDesign: true
+  }, passingAgent)
+  assert.equal(run.error, null)
+  assert.equal(run.calls.length, 0)
+  assert.equal(run.result.mode, 'design-render')
+  assert.ok(run.result.prompt.includes('输出格式'))
+  assert.ok(run.result.outputSchema)
+  assert.equal(run.result.schemaName, 'DESIGN_PLAN_SCHEMA')
+})
+
+test('codeDesign ingests external plan JSON without dispatching design agent', async () => {
+  const plan = {
+    ...PLAN,
+    slices: PLAN.slices.map((slice) => ({
+      ...slice,
+      research: { symbols: ['lib/x.js:42'], files: ['lib/x.js'], forbidden: [], verify: ['exit 0'] }
+    }))
+  }
+  const run = await runScript({
+    ...BASE, mode: 'design', requirement: '外部设计需求', discussionDigest: '已确认',
+    codeDesign: plan
+  }, passingAgent)
+  assert.equal(run.error, null)
+  assert.equal(run.calls.length, 0)
+  assert.equal(run.result.mode, 'design')
+  assert.equal(run.result.plan.slices[0].id, 'S1')
+  assert.deepEqual(run.result.plan.slices[0].research.files, ['lib/x.js'])
+})
+
+test('codeDesign rejects malformed external output', async () => {
+  const run = await runScript({
+    ...BASE, mode: 'design', requirement: '外部设计需求', discussionDigest: '已确认',
+    codeDesign: { summary: 's' }
+  }, passingAgent)
+  assert.ok(run.error)
+  assert.match(String(run.error.message), /codeDesign/)
+})
+
+test('host renderDesign writes the task book to outDir/external and returns promptPath', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'stage-design-render-'))
+  try {
+    const definition = realTool(workflowEngine(() => {
+      throw new Error('renderDesign must not dispatch an agent')
+    })).definition
+    const out = await definition.execute({
+      mode: 'design', requirement: '外部设计需求', discussionDigest: '已确认',
+      renderDesign: true, repoRoot: dir, outDir: dir, taskName: 't'
+    }, exec('a-design'))
+    const value = out.result
+    assert.equal(value.mode, 'design-render')
+    assert.ok(typeof value.promptPath === 'string' && value.promptPath.length > 0)
+    const text = await readFile(value.promptPath, 'utf8')
+    assert.equal(text, value.prompt)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

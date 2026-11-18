@@ -16,6 +16,7 @@
 
 - 默认文档路径与 `lib/config.js` 的 `MODULE_DEFS` 一致；可在插件设置里覆盖，Skill 注入的是解析后的绝对路径。
 - 共享规范：`docs/shared/plain-language.md`（产出文档语言：读者假设、先结论后依据、findings 三段式）；`docs/shared/dispatch-guide.md`（人工派发约定）。
+- 外部 Agent：`externalAgents.designer/reviewer` 开启时，design/review 走 `renderDesign→external_agent_run→codeDesign` / `renderReview→external_agent_run→codeReview`；进度在 BetterSidebar `Claude` tab；patch 新增行禁止切片 id/标题/序号（`slice-leak`）。本机 CLI 环境问题见 `docs/shared/external-claude-cli-troubleshooting.md`。
 - 2026-11-03：workflow 的 `planReview` / `briefReview` 已归档（代码保留、不启用），`brief` 改由主会话写入 `plan.json` 的 `slices[i].brief`；相关流程说明见规划规范与审查规范里的"归档"节。
 - 只按注入的绝对路径读取（路径由 Skill 注入）；读不到时报告该路径，禁止 `find /` 或扫描盘符。
 - `docs/global-agents-entry.md` 是用于重建或替换全局 `~/.dsh/AGENTS.md` 的入口模板，不由 Skill 正文加载。

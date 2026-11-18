@@ -462,8 +462,7 @@ function countReds(review) {
 // schema 方言不支持 maxItems，超量由 normalizeResearch() 在拿到结果后裁剪并告警。
 const RESEARCH_LIMITS = { symbols: 10, files: 5, forbidden: 5, verify: 3 };
 
-function normalizeResearch(planValue) {
-  if (!planValue || !Array.isArray(planValue.slices)) return planValue;
+function normalizeResearch(planValue) {  if (!planValue || !Array.isArray(planValue.slices)) return planValue;
   planValue.slices.forEach((slice) => {
     const research = slice && slice.research;
     if (!research || typeof research !== 'object' || Array.isArray(research)) return;
@@ -578,8 +577,8 @@ const FINDINGS_SCHEMA = {
           area: { type: 'string', description: '可选：模块/领域标签' },
           category: {
             type: 'string',
-            enum: ['defect', 'over-fix', 'over-design', 'performance'],
-            description: '可选，默认 defect；为单个边界引入通用机制/防御/契约变更/顺手重构报 over-fix（硬门禁项）'
+            enum: ['defect', 'over-fix', 'over-design', 'performance', 'slice-leak'],
+            description: '可选，默认 defect；为单个边界引入通用机制/防御/契约变更/顺手重构报 over-fix（硬门禁项）；代码/注释含切片 id/标题/序号报 slice-leak'
           },
           issue: { type: 'string' },
           fix: { type: 'string' },
@@ -1034,6 +1033,10 @@ const implementPrompt = (slice, brief, briefReview) => withStandards([
   '## 写入范围（硬约束，违反即失败）',
   WRITE_SCOPE,
   '',
+  '## 切片信息隔离（硬约束，违反即失败）',
+  '- 不得在代码、注释、标识符、测试名、日志字符串、新增文件/目录名或 patch 新增行中写入切片 id、切片标题或序号',
+  '  （如 S1、SliceP08b、本片标题）；需要解释时用行为/模块/契约描述。交付物文件名除外。',
+  '',
   '## 交付物路径',
   '- patch: ' + outDir + '/' + slice.id + '.patch',
   '- 薄文档: ' + outDir + '/' + slice.id + '.md',
@@ -1104,6 +1107,10 @@ const fixPrompt = (slice, brief, impl, codeReview, round, userFeedback) => withS
   '',
   '## 写入范围（硬约束，违反即失败）',
   WRITE_SCOPE,
+  '',
+  '## 切片信息隔离（硬约束，违反即失败）',
+  '- 不得在代码、注释、标识符、测试名、日志字符串、新增文件/目录名或 patch 新增行中写入切片 id、切片标题或序号',
+  '  （如 S1、SliceP08b、本片标题）；需要解释时用行为/模块/契约描述。交付物文件名除外。',
   '',
   '## 步骤',
   '1. 先把上一轮 patch **重新落盘**到工作区 `' + WORK_ROOT + '`（`git apply ' + ((impl && impl.patchPath) ? impl.patchPath : '<patch>') + '`），',
@@ -1212,8 +1219,15 @@ function reviewPayloadPath(sliceId, stage) {
 // 强制审查结论落盘：长返回值会被宿主截断，findings 只在返回值里等于随时可能丢。
 // renderOnly（Lead 侧 subagent）：写 payload 后只回路径，由宿主读文件并写 canonical；
 // 其他路径（批处理 / 旧 in-script）仍要求“写文件 + 返回完整 JSON”，脚本没有文件系统可读。
-function findingsPersistSection(slice, stage, renderOnly) {
+function findingsPersistSection(slice, stage, renderOnly, external = false) {
   const sliceId = slice && slice.id ? slice.id : '(unknown-slice)';
+  if (external) {
+    return [
+      '## 输出格式（硬要求）',
+      '只输出一个 JSON 对象（不要 markdown 围栏、不要解释文字）；不写任何文件，宿主会保存结果。',
+      ''
+    ];
+  }
   if (renderOnly) {
     return [
       '## 结果落盘（硬要求：先写文件，再返回路径）',
@@ -1235,7 +1249,7 @@ function findingsPersistSection(slice, stage, renderOnly) {
   ];
 }
 
-const codeReviewPrompt = (slice, impl, stage, renderOnly = false) => {
+const codeReviewPrompt = (slice, impl, stage, renderOnly = false, external = false) => {
   const lines = [
     REVIEW_AGENTS_GUIDE,
     '',
@@ -1261,6 +1275,7 @@ const codeReviewPrompt = (slice, impl, stage, renderOnly = false) => {
     '- 是否越界改动 brief 之外的东西。',
     '- 代码放置与 include 顺序按补丁交付规范「2. 最终 patch 的代码放置与 include 顺序」逐条核验'
       + '（用户硬要求，不按个人风格忽略；违规按 🟡 报，引发编译/语义问题的按实际严重度报）。',
+    '- 切片信息隔离：patch 新增行、代码、注释、标识符、测试名、日志字符串中出现切片 id/标题/序号时报 `category: "slice-leak"`（必须修复）。',
     '- 过度修复：若为单个边界条件引入通用机制、顺手重构、加不可达防御、改公共契约只为适配一个调用方，'
       + '报 finding 并在 `category` 写 `over-fix`（属硬门禁项，不能只写"接受理由"关闭）。',
     '- 性能：热路径（每帧/逐对象/逐像素）是否被过度防御拖重（不可达校验、防御性拷贝、每帧分配、锁、额外提交）；',
@@ -1290,13 +1305,13 @@ const codeReviewPrompt = (slice, impl, stage, renderOnly = false) => {
       (typeof stage.preflight === 'string') ? stage.preflight : JSON.stringify(stage.preflight, null, 2)
     );
   }
-  lines.push(...findingsPersistSection(slice, stage, renderOnly));
+  lines.push(...findingsPersistSection(slice, stage, renderOnly, external));
   return lines.join('\n');
 };
 
 // round>=2 的对账式复审：只审「上一轮 findings 状态 + 修复增量 + 调用链影响面」，
 // 不重读全量 patch、不再假装盲审。材料（上一轮 findings / delta）由宿主放进审查包或 args。
-const focusedReviewPrompt = (slice, impl, stage, renderOnly = false) => {
+const focusedReviewPrompt = (slice, impl, stage, renderOnly = false, external = false) => {
   const previous = (stage && stage.previousReview) || null;
   const prevFindings = (previous && previous.codeReview && Array.isArray(previous.codeReview.findings))
     ? previous.codeReview.findings.map((item) => ({
@@ -1341,6 +1356,7 @@ const focusedReviewPrompt = (slice, impl, stage, renderOnly = false) => {
     '4. delta 触及热路径时，额外核是否引入防御性拷贝 / 锁 / 额外提交 / 冗余校验；',
     '   热路径性能回归且无量化证据按 🔴 报（`category: "performance"`），冷路径不报。',
     '5. 与上一轮 findings 冲突时写清依据（代码位置/命令输出）。',
+    '6. patch 新增行出现切片 id/标题/序号时报 `category: "slice-leak"`（必须修复）。',
     '',
     ...(typeof stage.scopeWarning === 'string' && stage.scopeWarning !== ''
       ? ['## 范围提醒（宿主提供）', stage.scopeWarning, '']
@@ -1351,7 +1367,7 @@ const focusedReviewPrompt = (slice, impl, stage, renderOnly = false) => {
     '## 机械预检结果（Lead 提供，仅作线索）',
     (typeof stage.preflight === 'string') ? stage.preflight : JSON.stringify(stage.preflight, null, 2),
     '',
-    ...findingsPersistSection(slice, stage, renderOnly)
+    ...findingsPersistSection(slice, stage, renderOnly, external)
   ].join('\n');
 };
 
@@ -1575,13 +1591,43 @@ function stageFailure(stageName, sliceId, reason) {
 }
 
 // 0.10.0：Lead 侧 subagent 复审。renderOnly 只回任务书；codeReview 只做结果校验/后处理。
-function reviewOutputSuffix(schemaName, renderOnly = false) {
+function validateDesignResult(value) {
+  if (!isPlainObject(value)) throw new Error('codeDesign 必须是对象（外部 agent 返回的 plan JSON）');
+  if (typeof value.summary !== 'string' || typeof value.interfaceContract !== 'string' || !Array.isArray(value.slices)) {
+    throw new Error('codeDesign 缺少 summary / interfaceContract / slices');
+  }
+  value.slices.forEach((slice, index) => {
+    if (!isPlainObject(slice)) throw new Error('codeDesign.slices[' + index + '] 必须是对象');
+    for (const key of ['id', 'title', 'scope', 'acceptance', 'research']) {
+      if (slice[key] === undefined || slice[key] === null || slice[key] === '') {
+        throw new Error('codeDesign.slices[' + index + '] 缺少 ' + key);
+      }
+    }
+    if (!isPlainObject(slice.research)) throw new Error('codeDesign.slices[' + index + '].research 必须是对象');
+  });
+  normalizeResearch(value);
+  return value;
+}
+
+function designOutputSuffix() {
+  return [
+    '',
+    '## 输出格式（硬要求）',
+    '只输出一个 JSON 对象（不要 markdown 围栏、不要解释文字），字段按 DESIGN_PLAN_SCHEMA：',
+    'summary / interfaceContract / slices / decisions / openQuestions；slices 每项含 id/title/scope/acceptance/research。',
+    '不要写任何文件；宿主会把结果写入设计产物。'
+  ].join('\n');
+}
+
+function reviewOutputSuffix(schemaName, renderOnly = false, external = false) {
   const lines = [
     '',
     '## 输出格式（硬要求）',
     '最终只输出一个 JSON 对象（不要 markdown 围栏、不要解释文字）。'
   ];
-  if (renderOnly) {
+  if (external) {
+    lines.push('字段按 ' + schemaName + ' schema；只输出 JSON，不写文件。');
+  } else if (renderOnly) {
     lines.push('写盘成功时只输出 `{"reviewPath":"<结果文件绝对路径>"}`；写盘失败才按 ' + schemaName + ' schema 输出完整 JSON。');
   } else {
     lines.push('字段按 ' + schemaName + ' schema；写盘后返回完整 JSON。');
@@ -1598,8 +1644,27 @@ if (isStageMode) {
   if (mode === 'design') {
     const requirement = requireStageString(A.requirement, 'requirement');
     const digest = requireStageString(A.discussionDigest, 'discussionDigest');
-    const designed = await runPhase(STAGE_DEFS.design, '', () => agent(
-      planPrompt(requirement, digest), { label: 'design-plan', ...DESIGN, schema: DESIGN_PLAN_SCHEMA }));
+    const renderDesignOnly = A.renderDesign === true;
+    const ingestDesign = isPlainObject(A.codeDesign) ? A.codeDesign : null;
+    if (renderDesignOnly && ingestDesign !== null) {
+      throw new Error('args.renderDesign 与 args.codeDesign 不能同时使用');
+    }
+    if (A.externalAgents?.designer?.enabled === true && !renderDesignOnly && ingestDesign === null) {
+      throw new Error('designer 已启用外部 agent：请用 renderDesign/codeDesign');
+    }
+    if (renderDesignOnly) {
+      return {
+        ok: true, mode: 'design-render', external: true, prompt: planPrompt(requirement, digest) + designOutputSuffix(),
+        schemaName: 'DESIGN_PLAN_SCHEMA', outputSchema: DESIGN_PLAN_SCHEMA,
+        routes: ROUTES, runContext,
+        reviewStandardPath: EXPECTED_STANDARD,
+        reviewStandardConfirmed: reviewConfirmation()
+      };
+    }
+    const designed = ingestDesign !== null
+      ? validateDesignResult(ingestDesign)
+      : await runPhase(STAGE_DEFS.design, '', () => agent(
+        planPrompt(requirement, digest), { label: 'design-plan', ...DESIGN, schema: DESIGN_PLAN_SCHEMA }));
     if (designed === null) {
       return {
         ok: false, mode, stage: 'design', runContext, routes: ROUTES,
@@ -1613,7 +1678,7 @@ if (isStageMode) {
     normalizeResearch(designed);
     return {
       ok: true, mode, stages: ['design'], runContext, routes: ROUTES,
-      plan: designed, decisions, openQuestions,
+      external: ingestDesign !== null, plan: designed, decisions, openQuestions,
       reviewStandardPath: EXPECTED_STANDARD,
       reviewStandardConfirmed: reviewConfirmation(),
       nextAction: 'ask-user'
@@ -1687,8 +1752,12 @@ if (isStageMode) {
     const reviewImpl = Object.assign({}, implValue, { patchPath: A.patchPath, docPath: A.docPath });
     const renderOnly = A.renderReview === true;
     const ingestReview = isPlainObject(A.codeReview) ? A.codeReview : null;
+    const externalReviewer = A.externalAgents?.reviewer?.enabled === true;
     if (renderOnly && ingestReview !== null) {
       throw new Error('args.renderReview 与 args.codeReview 不能同时使用：render 只出任务书，codeReview 只消费结果');
+    }
+    if (externalReviewer && !renderOnly && ingestReview === null) {
+      throw new Error('reviewer 已启用外部 agent：请用 renderReview 生成任务书，再用 codeReview 消费结果');
     }
     if (ingestReview !== null) {
       if (typeof ingestReview.verdict !== 'string' || !Array.isArray(ingestReview.findings)) {
@@ -1731,7 +1800,7 @@ if (isStageMode) {
         reviewPackage: A.reviewPackage
       };
       if (renderOnly) {
-        renderPrompt = focusedReviewPrompt(stageSlice, reviewImpl, focusedStage, true);
+        renderPrompt = focusedReviewPrompt(stageSlice, reviewImpl, focusedStage, true, externalReviewer);
         renderSchemaName = 'FOCUSED_REVIEW_SCHEMA';
       } else if (ingestReview !== null) {
         reviewed = ingestReview;
@@ -1774,7 +1843,7 @@ if (isStageMode) {
         upgradeReason: (typeof A.upgradeReason === 'string') ? A.upgradeReason : null
       };
       if (renderOnly) {
-        renderPrompt = codeReviewPrompt(stageSlice, reviewImpl, fullStage, true);
+        renderPrompt = codeReviewPrompt(stageSlice, reviewImpl, fullStage, true, externalReviewer);
         renderSchemaName = 'ALIGNED_REVIEW_SCHEMA';
       } else if (ingestReview !== null) {
         reviewed = ingestReview;
@@ -1819,7 +1888,7 @@ if (isStageMode) {
         ok: true, mode: 'review-render', stages: ['codeReview'], sliceId: stageSliceId, title: stageSlice.title,
         round, reviewScope: reviewScope,
         upgradeReason: (typeof A.upgradeReason === 'string' && A.upgradeReason !== '') ? A.upgradeReason : null,
-        prompt: renderPrompt + reviewOutputSuffix(renderSchemaName, renderOnly),
+        prompt: renderPrompt + reviewOutputSuffix(renderSchemaName, renderOnly, externalReviewer),
         schemaName: renderSchemaName,
         reviewPackage: (A.reviewPackage !== undefined) ? A.reviewPackage : null,
         reviewStandardPath: EXPECTED_STANDARD,

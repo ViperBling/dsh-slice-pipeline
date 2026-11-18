@@ -12,17 +12,16 @@ whenToUse: 需求已收敛要跑流水线：用户说“跑 slice-pipeline”“
 - **逐阶段（主路径）**：用户要插话、要先看第一轮 patch，且 Lead 会话有 `spawn_teammate` → 按 ①–⑧ 逐步调用。
 - **批处理（可选）**：用户不想插话，或 profile 未启用 Agent Teams → 一次 `slice_pipeline_run`。
 
-## 前置检查（每次运行前）
+## 外部 Agent（可选）
+注入 args 的 `externalAgents.<role>.enabled=true` 时：design 改走 `renderDesign:true` → `external_agent_run`（role=designer，promptPath/promptSha12/outputSchema/cwd/outDir）→ `codeDesign:{resultPath}`；review 改走 `renderReview:true`（带 `external`）→ `external_agent_run`（role=reviewer）→ `codeReview:{resultPath}`。进度看 BetterSidebar 的 `Claude` tab；失败只报用户、不静默降级；批处理 `plan-only`/`slice` 会直接报错。若 `external_agent_run` 不在工具列表，停下报告注册问题，不要用 `subagent`/`subagent_claude_code` 代跑。**外部 CLI 走 `~/.claude/settings.json`，不是 DSH `routes.designer`；结果带 `external`/`routeSource=claude-cli`，不要把它当成同一 DSH 路由或与既有切片直接对比。**
 
+## 前置检查（每次运行前）
 1. `slice_pipeline_run` 可用，且正文末尾有 `## 当前插件配置（由 dsh-slice-pipeline 注入）` 与 ```json args 块。注入块写「未注册」时把原因原样转述；缺注入块或 `workflow` 也不可用时停下，不要换工具硬跑。
 2. 走逐阶段前确认 Lead 有 `spawn_teammate` / `send_message` / `list_agents`；没有就降级批处理并说明原因。
 
 ## 运行方式（首选）
-
-- 调用 `slice_pipeline_run`，**只传工具参数**：脚本与配置由宿主读取/注入，**不要读脚本、不要读注入的 args JSON 来拼工具参数**。
-- `render-*` 返回的 `prompt` 是原文块，**原样转交** tasker，不得改写；超长会直接报错（不截断）。
-- 批处理：`plan-only` 前台（结果要立刻交用户裁决）；`slice` 建议 `run_in_background: true`，完成后 `job_output` 查看并复述 `status`/`detail`。
-- 后台被 kill 或前台中断后，子代理可能已改过工作区：先加载 `slice-workspace-recovery` 确认状态。
+- 调用 `slice_pipeline_run`，**只传工具参数**；不要读脚本、不要读注入的 args JSON 来拼工具参数；`render-*` 的 `prompt` 原样转交 tasker，不改写；超长直接报错、不截断。
+- 批处理：`plan-only` 前台；`slice` 建议 `run_in_background: true`，完成后 `job_output` 复述 `status`/`detail`；中断后先加载 `slice-workspace-recovery` 确认状态。
 
 ## 逐阶段协议 ①–⑧
 
@@ -47,7 +46,7 @@ whenToUse: 需求已收敛要跑流水线：用户说“跑 slice-pipeline”“
 
 ## 归档阶段（不启用）
 
-`planReview`（设计/计划审查）与 `briefReview`（brief 方案审查）已归档：代码与 prompt 保留，但默认阶段表不含，配置或 `stages` 覆盖里出现会被剔除并 `warn`，不可通过配置启用。需要重新启用时从 `ARCHIVED_STAGES` 移除并恢复默认阶段表（README/规划规范有说明）。
+`planReview`（设计/计划审查）与 `briefReview`（brief 方案审查）已归档：阶段表不含，配置或 `stages` 出现会被剔除并 `warn`；重新启用需从 `ARCHIVED_STAGES` 移除并恢复默认阶段表。
 
 ## 角色与模型
 
