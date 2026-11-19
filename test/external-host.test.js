@@ -81,8 +81,82 @@ test('review refuses a patch whose added lines leak the slice id/title', async (
   }
 })
 
-test('review accepts a clean patch without slice metadata', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'slice-clean-'))
+test('slice-leak gate does not flag a longer identifier sharing the slice prefix', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'slice-prefix-'))
+  try {
+    const outDir = dir
+    const patchPath = join(dir, 'S1.patch')
+    const docPath = join(dir, 'S1.md')
+    const planFile = join(dir, 'plan.json')
+    await writeFile(planFile, JSON.stringify(PLAN))
+    await writeFile(docPath, '# 薄文档')
+    await writeFile(patchPath, [
+      'diff --git a/lib/x.js b/lib/x.js',
+      '--- a/lib/x.js',
+      '+++ b/lib/x.js',
+      '@@ -1 +1,2 @@',
+      '+const S10 = 1',
+      '+const value = 2'
+    ].join('\n'))
+    const tool = toolWith({})
+    await assert.rejects(
+      () => tool.execute({
+        mode: 'review', planFile, sliceId: 'S1', round: 1, userFeedback: '',
+        patchPath, docPath, outDir,
+        impl: { sliceId: 'S1', patchPath, docPath, verifyResult: 'exit 0' },
+        preflight: 'exit 0', renderReview: true, ...CONTEXT, outDir
+      }, EXEC),
+      /engine must not start/
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('incremental review still applies the slice-leak gate to the delta', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'slice-delta-leak-'))
+  try {
+    const outDir = dir
+    const patchPath = join(dir, 'S1.patch')
+    const docPath = join(dir, 'S1.md')
+    const planFile = join(dir, 'plan.json')
+    await mkdir(join(outDir, 'reviews'), { recursive: true })
+    await writeFile(planFile, JSON.stringify(PLAN))
+    await writeFile(docPath, '# 薄文档')
+    await writeFile(patchPath, 'diff --git a/lib/x.js b/lib/x.js\n')
+    await writeFile(join(outDir, 'reviews', 'S1-review-r1.json'), JSON.stringify({
+      round: 1, sliceId: 'S1',
+      codeReview: { verdict: 'revise', findings: [{ severity: 'red', file: 'lib/x.js', line: '1', issue: 'i', fix: 'f', evidence: 'e' }], standardPath: 'x' }
+    }))
+    const deltaPath = join(outDir, 'S1-fix-r1.patch')
+    await writeFile(deltaPath, [
+      'diff --git a/lib/x.js b/lib/x.js',
+      '--- a/lib/x.js',
+      '+++ b/lib/x.js',
+      '@@ -1 +1,2 @@',
+      '+// S1: 本片修复',
+      '+const value = 1'
+    ].join('\n'))
+    const tool = toolWith({})
+    await assert.rejects(
+      () => tool.execute({
+        mode: 'review', planFile, sliceId: 'S1', round: 2, userFeedback: 'u',
+        reviewScope: 'incremental',
+        patchPath, docPath, outDir,
+        impl: {
+          sliceId: 'S1', patchPath, docPath, verifyResult: 'exit 0',
+          filesChanged: 'lib/x.js', fixDeltaPath: deltaPath
+        },
+        preflight: 'exit 0', renderReview: true, ...CONTEXT, outDir
+      }, EXEC),
+      /patch 新增行包含切片信息/
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('review accepts a clean patch without slice metadata', async () => {  const dir = await mkdtemp(join(tmpdir(), 'slice-clean-'))
   try {
     const outDir = dir
     const patchPath = join(dir, 'S1.patch')

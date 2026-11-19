@@ -89,6 +89,7 @@ dsh plugin --profile web remove dsh-slice-pipeline
 - 外部执行默认 `maxTurns=120`、整体超时 30 分钟、首个内容响应超时 10 分钟；这三项都在设置页「外部 Agent」区可改（`externalAgents.maxTurns` / `timeoutMinutes` / `firstResponseTimeoutMinutes`），单次调用仍可用 `timeoutMs` / `firstResponseTimeoutMs` 覆盖。`error_max_turns` 表示模型在预算内没收敛，不是卡死。
 - 本机 Claude CLI 的 thinking/effort 环境问题与回退方式见 [`docs/shared/external-claude-cli-troubleshooting.md`](docs/shared/external-claude-cli-troubleshooting.md)。
 - 外部执行失败只报错，不静默降级；批处理 `plan-only`/`slice` 遇到外部开关会直接报错。
+- 外部 CLI 若输出了自己的严重度词表（blocker / critical / major / minor / nit / P0–P3 等），会先归一化成 red / yellow / green 再判定；无法识别的 severity 按 yellow 处理并 `warn`，不会静默当成绿色放过。
 - **路由不是同一条**：外部 CLI 使用 `~/.claude/settings.json` 的 provider/base URL/model，不是 DSH 的 `roles.designer` 路由（例如 `paper-anthropic/claude-opus-5-5`）。结果会带 `external` / `routeSource: claude-cli`；不要把它与既有 DSH 路由产出的设计直接对比。
 - 不复用实验性 `subagent_claude_code`：它只返回最终文本，没有 output schema、结果文件或工具级进度；本插件需要结构化结果与细粒度进度。
 

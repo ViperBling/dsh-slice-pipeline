@@ -378,6 +378,22 @@ test('review mode maps remaining red findings to send-fix', async () => {
   assert.equal(run.result.nextAction, 'send-fix')
 })
 
+test('review mode normalizes external severity vocabularies', async () => {
+  const reviewWith = (severity) => ({
+    verdict: 'revise',
+    findings: [{ severity, file: 'lib/x.js', line: '1', issue: 'i', fix: 'f', evidence: 'e' }],
+    standardPath: ECHO
+  })
+  for (const severity of ['red', 'blocker', 'CRITICAL', 'major', 'P0', '严重', 'high-priority', 'must-fix', '🔴']) {
+    const run = await runScript(reviewArgs(), () => reviewWith(severity))
+    assert.equal(run.result.redCount, 1, severity)
+  }
+  for (const severity of ['yellow', 'minor', 'MINOR', 'nit', 'low', '提示', 'medium-priority', 'should-fix', '🟡', '🟢', 'unknown-ish']) {
+    const run = await runScript(reviewArgs(), () => reviewWith(severity))
+    assert.equal(run.result.redCount, 0, severity)
+  }
+})
+
 test('review mode reports fixExhausted once the fix rounds are used up', async () => {
   const red = () => ({
     verdict: 'revise',
@@ -1185,6 +1201,21 @@ test('renderReview returns the review task book without dispatching an agent', a
   assert.ok(run.result.prompt.includes('.payload.json'))
   assert.ok(run.result.prompt.includes('reviewPath'))
   assert.ok(run.result.prompt.includes('两段式审查'))
+})
+
+test('renderReview carries outputSchema and the external flag for the external reviewer', async () => {
+  const run = await runScript({
+    ...BASE, mode: 'review', plan: PLAN, sliceId: 'S1', impl: IMPL,
+    patchPath: IMPL.patchPath, docPath: IMPL.docPath, round: 1, userFeedback: '',
+    preflight: 'exit 0', renderReview: true, ...CONTEXT,
+    externalAgents: { reviewer: { enabled: true } }
+  }, passingAgent)
+  assert.equal(run.error, null)
+  assert.equal(run.result.external, true)
+  assert.equal(run.result.schemaName, 'ALIGNED_REVIEW_SCHEMA')
+  assert.equal(run.result.outputSchema.type, 'object')
+  assert.ok(Array.isArray(run.result.outputSchema.required))
+  assert.ok(run.result.prompt.includes('不写文件'), 'external task book must not ask for a payload file')
 })
 
 test('codeReview ingest computes redCount/nextAction without dispatching an agent', async () => {

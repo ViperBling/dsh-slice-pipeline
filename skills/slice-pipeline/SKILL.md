@@ -13,7 +13,7 @@ whenToUse: 需求已收敛要跑流水线：用户说“跑 slice-pipeline”“
 - **批处理（可选）**：用户不想插话，或 profile 未启用 Agent Teams → 一次 `slice_pipeline_run`。
 
 ## 外部 Agent（可选）
-注入 args 的 `externalAgents.<role>.enabled=true` 时：design 改走 `renderDesign:true` → `external_agent_run`（role=designer，promptPath/promptSha12/outputSchema/cwd/outDir）→ `codeDesign:{resultPath}`；review 改走 `renderReview:true`（带 `external`）→ `external_agent_run`（role=reviewer）→ `codeReview:{resultPath}`。进度看 BetterSidebar 的 `Claude` tab；失败只报用户、不静默降级；批处理 `plan-only`/`slice` 会直接报错。若 `external_agent_run` 不在工具列表，停下报告注册问题，不要用 `subagent`/`subagent_claude_code` 代跑。**外部 CLI 走 `~/.claude/settings.json`，不是 DSH `routes.designer`；结果带 `external`/`routeSource=claude-cli`，不要把它当成同一 DSH 路由或与既有切片直接对比。**
+注入 args 的 `externalAgents.<role>.enabled=true` 时：design 改走 `renderDesign:true` → `external_agent_run`（role=designer，promptPath/promptSha12/schema（=render 返回的 outputSchema）/cwd/outDir）→ `codeDesign:{resultPath}`；review 改走 `renderReview:true`（带 `external`）→ `external_agent_run`（role=reviewer）→ `codeReview:{resultPath}`。进度看 BetterSidebar 的 `Claude` tab；失败只报用户、不静默降级；批处理 `plan-only`/`slice` 会直接报错。若 `external_agent_run` 不在工具列表，停下报告注册问题，不要用 `subagent`/`subagent_claude_code` 代跑。**外部 CLI 走 `~/.claude/settings.json`，不是 DSH `routes.designer`；结果带 `external`/`routeSource=claude-cli`，不要把它当成同一 DSH 路由或与既有切片直接对比。**
 
 ## 前置检查（每次运行前）
 1. `slice_pipeline_run` 可用，且正文末尾有 `## 当前插件配置（由 dsh-slice-pipeline 注入）` 与 ```json args 块。注入块写「未注册」时把原因原样转述；缺注入块或 `workflow` 也不可用时停下，不要换工具硬跑。

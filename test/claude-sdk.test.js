@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { createClaudeRunner, readClaudeModelOptions } from '../lib/claude-sdk.js'
+import { createClaudeRunner, readClaudeModelOptions, sdkInstallArgs } from '../lib/claude-sdk.js'
 
 function fakeQuery(captured) {
   return (input) => {
@@ -64,6 +64,7 @@ test('Claude runner uses strict read-only options and forwards structured output
   assert.ok(events.some((event) => event.t === 'tool' && event.status === 'start'))
   assert.ok(events.some((event) => event.t === 'tool' && event.status === 'end'))
   assert.ok(events.some((event) => event.t === 'done' && event.status === 'completed'))
+  assert.deepEqual(events.find((event) => event.t === 'done').structured, { verdict: 'pass' })
 })
 
 test('Claude runner fails when the SDK yields no structured output', async () => {
@@ -112,4 +113,13 @@ test('Claude runner accepts JSON text when a proxy omits structured_output', asy
   })
   const result = await runner({ prompt: 'p', schema: { type: 'object' }, cwd: 'C:/repo' })
   assert.deepEqual(result.structuredOutput, { ok: true })
+})
+
+test('SDK install keeps a spaced home path as one npm argument', () => {
+  const root = 'C:\\Users\\John Doe\\.dsh\\slice-pipeline\\claude-sdk\\0.3.287'
+  const args = sdkInstallArgs({ root })
+  const prefix = args[args.indexOf('--prefix') + 1]
+  if (process.platform === 'win32') assert.ok(prefix.startsWith('"') && prefix.endsWith('"'), prefix)
+  else assert.equal(prefix, root)
+  assert.ok(args.includes('@anthropic-ai/claude-agent-sdk@0.3.287'))
 })

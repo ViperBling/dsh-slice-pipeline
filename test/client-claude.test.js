@@ -155,6 +155,64 @@ test('folds raw structured-output text and keeps short prose visible', async () 
   )
 })
 
+test('renders the structured output instead of the assistant text result', async () => {
+  const { exports } = await loadClientHarness()
+  const textResult = JSON.stringify({ summary: 's', designMarkdown: '# plan' })
+  const ndjson = JSON.stringify({
+    v: 1, t: 'done', status: 'completed', detail: textResult,
+    structured: {
+      summary: '设计摘要',
+      interfaceContract: '契约',
+      slices: [{ id: 'S1', title: '切片一', scope: '范围', acceptance: '验收' }],
+      decisions: [],
+      openQuestions: []
+    }
+  }) + '\n'
+  const tree = claudeTab(exports, ndjson)
+  assert.ok(textOf(tree).includes('Design result'), 'design card renders from structured output')
+  assert.ok(textOf(tree).includes('切片一'))
+  assert.ok(textOf(tree).includes('1 slices'))
+})
+
+test('review findings render workflow fields (issue/file/line/fix) and unverifiable text', async () => {
+  const { exports } = await loadClientHarness()
+  const structured = {
+    verdict: 'revise',
+    standardPath: 'docs/review/review-standard.md',
+    findings: [{ severity: 'red', file: 'src/a.cpp', line: '12', issue: '空指针风险', fix: '先判空', evidence: 'p->x()' }],
+    blindFindings: [],
+    unverifiable: 'GPU 路径未验证'
+  }
+  const ndjson = JSON.stringify({ v: 1, t: 'done', status: 'completed', detail: 'ok', structured }) + '\n'
+  const tree = claudeTab(exports, ndjson)
+  assert.ok(textOf(tree).includes('Review result'))
+  assert.ok(textOf(tree).includes('空指针风险'))
+  assert.ok(textOf(tree).includes('src/a.cpp:12'))
+  assert.ok(textOf(tree).includes('建议：先判空'))
+  assert.ok(textOf(tree).includes('GPU 路径未验证'))
+})
+
+test('renders a custom external schema as a readable general card instead of raw JSON', async () => {
+  const { exports } = await loadClientHarness()
+  const structured = {
+    summary: 'Slice02 方案：造型图只在像素级采样一次',
+    designMarkdown: '# 方案\n\n第一段\n第二段',
+    decisions: [{ topic: '采样位置', decision: '像素级每列一次' }],
+    openQuestions: ['是否需要 Inspector 分组'],
+    risks: ['HLSL tab 缩进必须保持']
+  }
+  const ndjson = JSON.stringify({ v: 1, t: 'done', status: 'completed', detail: 'ok', structured }) + '\n'
+  const tree = claudeTab(exports, ndjson)
+  const text = textOf(tree)
+  assert.ok(text.includes('Design result（通用格式）'))
+  assert.ok(text.includes('Slice02 方案：造型图只在像素级采样一次'))
+  assert.ok(text.includes('正文（'))
+  assert.ok(text.includes('采样位置：像素级每列一次'))
+  assert.ok(text.includes('是否需要 Inspector 分组'))
+  assert.ok(text.includes('HLSL tab 缩进必须保持'))
+  assert.equal(text.includes('{\\"summary\\"'), false, 'raw JSON is not printed')
+})
+
 test('registers the Claude BetterSidebar tab and auto-opens it for a running job', async () => {
   const { exports } = await loadClientHarness()
   const tabs = []

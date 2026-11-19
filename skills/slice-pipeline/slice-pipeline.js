@@ -449,11 +449,46 @@ const WRITE_SCOPE = workspace
   ? '只允许在副本 "' + workspace + '" 内修改文件；严禁修改原工作区 "' + repoRoot + '" 的任何文件。'
   : '允许在 "' + repoRoot + '" 内修改文件；但交付物只有 patch 与文档，产出 patch 后必须把工作区回退到基线。';
 
-// 数 🔴 条数的小工具（codeReview / briefReview 共用）
+// 数 🔴 条数的小工具（codeReview / briefReview 共用）。
+// 外部 CLI / 模型常输出自己的严重度词表（blocker / major / minor / nit / P0…），
+// 统一归一化到 red / yellow / green 再判定，避免把真实阻断项当绿色放过。
+const SEVERITY_ALIASES = {
+  red: 'red', blocker: 'red', blocking: 'red', critical: 'red', fatal: 'red', severe: 'red',
+  major: 'red', high: 'red', error: 'red', p0: 'red', p1: 'red', 严重: 'red', 阻断: 'red', 必须修: 'red',
+  yellow: 'yellow', warn: 'yellow', warning: 'yellow', medium: 'yellow', moderate: 'yellow',
+  minor: 'yellow', important: 'yellow', attention: 'yellow', p2: 'yellow', 中: 'yellow', 需修改: 'yellow',
+  green: 'green', nit: 'green', nits: 'green', trivial: 'green', low: 'green', info: 'green',
+  informational: 'green', suggestion: 'green', style: 'green', cosmetic: 'green', note: 'green',
+  p3: 'green', 提示: 'green', 建议: 'green', 可选: 'green',
+  '🔴': 'red', '🟡': 'yellow', '🟢': 'green'
+};
+
+function normalizeSeverity(value) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim().toLowerCase();
+  if (SEVERITY_ALIASES[text]) return SEVERITY_ALIASES[text];
+  const compact = text.replace(/[^a-z0-9\u4e00-\u9fa5]/g, '');
+  if (SEVERITY_ALIASES[compact]) return SEVERITY_ALIASES[compact];
+  // 复合词（high-priority / must-fix / not-blocking…）按关键片段归类。
+  if (/block|critical|fatal|severe|major|high|error|must|严重|阻断|必须/.test(compact)) return 'red';
+  if (/warn|medium|moderate|minor|important|attention|should|需修改|中/.test(compact)) return 'yellow';
+  if (/nit|trivial|low|info|suggest|style|cosmetic|note|提示|建议|可选/.test(compact)) return 'green';
+  return '';
+}
+
 function countReds(review) {
-  return (review && Array.isArray(review.findings))
-    ? review.findings.filter((f) => f && f.severity === 'red').length
-    : null;
+  if (!review || !Array.isArray(review.findings)) return null;
+  let reds = 0;
+  review.findings.forEach((finding) => {
+    if (!finding) return;
+    const normalized = normalizeSeverity(finding.severity);
+    if (normalized === '') {
+      log('warn: 未知 severity "' + String(finding.severity) + '"，按 yellow 处理');
+      return;
+    }
+    if (normalized === 'red') reds += 1;
+  });
+  return reds;
 }
 
 // --- 结构化输出 schema（只允许 type/properties/required/additionalProperties/items/enum/const/oneOf）---
@@ -1884,12 +1919,17 @@ if (isStageMode) {
     }
 
     if (renderOnly) {
+      const renderSchema = renderSchemaName === 'FOCUSED_REVIEW_SCHEMA'
+        ? FOCUSED_REVIEW_SCHEMA
+        : (renderSchemaName === 'ALIGNED_REVIEW_SCHEMA' ? ALIGNED_REVIEW_SCHEMA : FINDINGS_SCHEMA);
       return {
         ok: true, mode: 'review-render', stages: ['codeReview'], sliceId: stageSliceId, title: stageSlice.title,
         round, reviewScope: reviewScope,
         upgradeReason: (typeof A.upgradeReason === 'string' && A.upgradeReason !== '') ? A.upgradeReason : null,
         prompt: renderPrompt + reviewOutputSuffix(renderSchemaName, renderOnly, externalReviewer),
+        external: externalReviewer,
         schemaName: renderSchemaName,
+        outputSchema: renderSchema,
         reviewPackage: (A.reviewPackage !== undefined) ? A.reviewPackage : null,
         reviewStandardPath: EXPECTED_STANDARD,
         reviewStandardConfirmed: reviewConfirmation(),

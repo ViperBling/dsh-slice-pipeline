@@ -206,7 +206,8 @@ test('events live in the owning Session directory and stay invisible to other Se
     assert.deepEqual(listExternalEventFiles({ home: root, sessionId: 's2' }), [])
     assert.equal(deleteExternalEventFiles(result.jobId, { home: root, sessionId: 's2' }), 0)
     assert.equal(getExternalEventFile(result.jobId, { home: root, sessionId: 's1', sessionDir }), file)
-    assert.equal(deleteExternalEventFiles(result.jobId, { home: root, sessionId: 's1', sessionDir }), 1)
+    // ndjson + sidecar are both removed and counted.
+    assert.equal(deleteExternalEventFiles(result.jobId, { home: root, sessionId: 's1', sessionDir }), 2)
     assert.equal(getExternalEventFile(result.jobId, { home: root, sessionId: 's1', sessionDir }), undefined)
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -296,6 +297,75 @@ test('external agent timeouts follow settings, and per-call params win', async (
     await tool.execute({ ...base, timeoutMs: 60_000, firstResponseTimeoutMs: 5_000 }, { agent: { id: 'a' } })
     assert.equal(captured.timeoutMs, 60_000)
     assert.equal(captured.firstResponseTimeoutMs, 5_000)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('history lists newest first, reads the session log once, and deletes sidecar-only jobs', async () => {
+  const { root } = await tempOut()
+  try {
+    const legacy = join(root, 'slice-pipeline', 'claude-events')
+    await mkdir(legacy, { recursive: true })
+    await writeFile(join(legacy, 'job-old.ndjson'), '{}\n')
+    await writeFile(join(legacy, 'job-old.json'), JSON.stringify({ jobId: 'job-old', label: 'old', startedAt: 100 }))
+    const sessionDir = join(root, 'sessions', 'p', 's-order')
+    const target = join(sessionDir, 'slice-pipeline', 'claude-events')
+    await mkdir(target, { recursive: true })
+    for (const [jobId, startedAt] of [['job-a', 200], ['job-b', 300]]) {
+      await writeFile(join(target, jobId + '.ndjson'), '{}\n')
+      await writeFile(join(target, jobId + '.json'), JSON.stringify({ jobId, startedAt, sessionId: 's-order' }))
+    }
+    const { adoptLegacyEvents, listExternalEventFiles, deleteExternalEventFiles } = await import('../lib/external-agent.js')
+    let reads = 0
+    const readSessionInfo = async () => { reads += 1; return { cwd: root, text: '' } }
+    assert.equal(await adoptLegacyEvents({ home: root, sessionId: 's-order', sessionDir, readSessionInfo }), 0)
+    assert.equal(await adoptLegacyEvents({ home: root, sessionId: 's-order', sessionDir, readSessionInfo }), 0)
+    assert.equal(reads, 1, 'an empty result is cached, not re-read by every poll')
+    assert.deepEqual(
+      listExternalEventFiles({ home: root, sessionId: 's-order', sessionDir }).map((job) => job.jobId),
+      ['job-b', 'job-a']
+    )
+    await rm(join(target, 'job-a.ndjson'))
+    assert.equal(deleteExternalEventFiles('job-a', { home: root, sessionId: 's-order', sessionDir }), 1)
+    assert.equal(existsSync(join(target, 'job-a.json')), false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a cancelled caller also kills the running external job', async () => {
+  const { root, outDir } = await tempOut()
+  try {
+    const killed = []
+    const jobs = {
+      start(spec) {
+        const handle = { id: 'claude-x', append() {}, updateProgress() {} }
+        spec.run(handle)
+        return 'claude-x'
+      },
+      async wait() { throw new Error('aborted') },
+      kill(id, owner, reason) { killed.push({ id, owner, reason }) }
+    }
+    const tool = createExternalAgentTool({
+      getConfig: () => externalConfig(),
+      jobs, dshHome: root,
+      runnerFactory: async () => {
+        await new Promise(() => {})
+      }
+    })
+    const { createHash } = await import('node:crypto')
+    const prompt = 'P'
+    await assert.rejects(
+      () => tool.execute({
+        role: 'reviewer', prompt,
+        promptSha12: createHash('sha256').update(prompt).digest('hex').slice(0, 12),
+        schema: { type: 'object' }, cwd: root, outDir
+      }, { agent: { id: 's1' }, signal: new AbortController().signal }),
+      /aborted/
+    )
+    assert.equal(killed.length, 1)
+    assert.equal(killed[0].reason, 'caller cancelled')
   } finally {
     await rm(root, { recursive: true, force: true })
   }
